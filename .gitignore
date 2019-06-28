@@ -1,5 +1,5 @@
-.Rproj.user
-.Rhistory
-*~
-*.zip
-.ipynb_checkpoints
+*citibike-tripdata.csv
+*.csv
+*.tsv
+*.Rdata
+*.dat
