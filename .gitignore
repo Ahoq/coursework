@@ -3,3 +3,5 @@
 *.tsv
 *.Rdata
 *.dat
+*.gz
+*.zip
