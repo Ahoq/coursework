@@ -1,0 +1,155 @@
+---
+title: "predict_citibike"
+author: "Adnan Hoq"
+date: "7/1/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r required packages}
+library(tidyverse)
+
+library(modelr)
+
+library(lubridate)
+
+library(broom)
+
+```
+
+
+```{r wrangling trips_per_day}
+
+trips_per_day <-  read_tsv("trips_per_day.tsv")
+
+holidays <- read_csv(file="holidays.csv", col_names = FALSE) 
+
+colnames(holidays) <- c("index", "date", "holiday")
+
+holidays <- holidays %>% mutate(ymd = as.Date(date, "%m/%d/%Y")) %>% select(ymd, holiday)
+
+
+holidays <- holidays %>% mutate(is_holiday = !(is.na(holiday)))
+
+
+
+trips_per_day$day <- weekdays(trips_per_day$ymd)
+
+
+trips_per_day$is_weekend <- (trips_per_day$day=="Saturday"|trips_per_day$day == "Sunday")
+
+
+trips_per_day <- left_join(trips_per_day, holidays)
+
+trips_per_day[c("is_holiday")][is.na(trips_per_day[c("is_holiday")])] <- FALSE
+```
+
+
+```{r k-fold}
+set.seed(42)
+
+
+num_folds <- 5
+
+
+trips_per_day <- sample_frac(trips_per_day, 1, replace = F) %>%
+
+  mutate(fold = (row_number()%% num_folds) + 1)
+
+rmse_validation <- c()
+
+r_sq_validation <- c()
+
+rmse_training <- c()
+
+r_sq_training <- c()
+
+for (f in 1:num_folds){
+
+  training <- trips_per_day %>% filter(fold != f)
+
+  model <- lm(num_trips ~ prcp * tmin +  prcp * tmax + snwd * tmin + snwd * tmax + is_weekend + is_holiday, data = training)
+
+  
+  validation <- trips_per_day %>% filter(fold == f)
+
+
+  rmse_validation[f] <- sqrt(mean((predict(model, validation) - validation$num_trips)^2))
+
+  r_sq_validation[f] <- rsquare(model, validation)
+  
+  rmse_training[f] <- sqrt(mean((predict(model, training) - training$num_trips)^2))
+
+  r_sq_training[f] <- rsquare(model, training)
+
+
+}
+
+
+
+avg_rmse_validation <- mean(rmse_validation)
+
+avg_r_sq_validation <- mean(r_sq_validation)
+
+se_validation <- sd(rmse_validation) / sqrt(num_folds)
+
+avg_rmse_training <- mean(rmse_training)
+
+avg_r_sq_training <- mean(r_sq_training)
+
+se_training <- sd(rmse_training) / sqrt(num_folds)
+
+avg_r_sq_validation
+avg_rmse_validation
+se_validation
+
+trips_per_day <- add_predictions(trips_per_day, model)
+```
+
+
+```{r plots}
+
+trips_per_day %>%
+
+  ggplot() +
+
+  geom_point(aes(x = ymd, y = num_trips)) +
+
+  geom_line(aes(x = ymd, y = pred), color = "red") +
+
+  xlab("Date") +
+
+  ylab("Number of Rides") +
+
+  scale_y_continuous(label = comma)
+```
+```{r plot2}
+
+
+trips_per_day %>%
+
+  ggplot() +
+
+  geom_point(aes(x = pred, y = num_trips)) +
+
+  xlab("Predicted Rides") +
+
+  ylab("Actual Rides") +
+
+  scale_x_continuous(label = comma) +
+
+  scale_y_continuous(label = comma)
+
+```
+```{r save model}
+
+model <- lm(num_trips~ prcp * tmin +  prcp * tmax + snwd * tmin + snwd * tmax + is_weekend + is_holiday, data = training)
+
+save(model, file = "model.RData")
+
+```

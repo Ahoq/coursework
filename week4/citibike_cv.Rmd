@@ -1,0 +1,270 @@
+---
+title: "cross_validation"
+author: "Adnan Hoq"
+date: "7/1/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r required packages}
+library(tidyverse)
+
+library(modelr)
+
+library(lubridate)
+
+library(broom)
+
+```
+
+
+```{r sample}
+
+
+trips_per_day <-  read_tsv("trips_per_day.tsv")
+
+
+
+set.seed(42)
+
+
+
+training_set_1 <- sample_n(trips_per_day, nrow(trips_per_day)*0.8, replace = FALSE)
+
+validation_set_1 <- anti_join(trips_per_day, training_set_1)
+
+
+model_1 <- lm(num_trips ~ tmin, data = training_set_1)
+
+
+
+training_set_1$predicted <- predict(model_1, training_set_1)
+
+validation_set_1$predicted <- predict(model_1, validation_set_1)
+
+
+
+r_squared_training_1 <- cor(training_set_1$predicted, training_set_1$num_trips)^2
+
+r_squared_training_1
+
+rmse_training_1 <- rmse(model_1, training_set_1)
+
+rmse_training_1
+
+
+
+
+
+r_squared_validation_1 <- cor(validation_set_1$predicted, validation_set_1$num_trips)^2
+
+r_squared_validation_1
+
+rmse_validation_1 <- rmse(model_1, validation_set_1)
+
+rmse_validation_1
+
+```
+
+
+
+```{r val_train_plot}
+
+validation_set_1 %>%
+
+  ggplot() +
+
+  geom_point(aes(x = tmin, y = num_trips), color = "purple") +
+
+  geom_line(aes(x = tmin, y = predicted), color = "red")
+```
+```{r val_train_plot(with quad)}
+
+validation_set_2 %>%
+
+  ggplot() +
+
+  geom_point(aes(x = tmin, y = num_trips), color = "purple") +
+
+  geom_line(aes(x = tmin, y = predicted), color = "red")
+```
+
+```{r fit_with_quad}
+
+set.seed(42)
+
+
+
+training_set_2 <- sample_n(trips_per_day, nrow(trips_per_day)*0.8, replace = FALSE)
+
+validation_set_2 <- anti_join(trips_per_day, training_set_2)
+
+model_2 <- lm(formula = num_trips ~ poly(tmin, 2), data = training_set_2)
+
+
+
+training_set_2$predicted <- predict(model_2, training_set_2)
+
+validation_set_2$predicted <- predict(model_2, validation_set_2)
+
+
+
+r_squared_training_2 <- cor(training_set_2$predicted, training_set_2$num_trips)^2
+
+r_squared_training_2
+
+rmse_training_2 <- rmse(model_2, training_set_2)
+
+rmse_training_2
+
+
+
+
+
+r_squared_validation_2 <- cor(validation_set_2$predicted, validation_set_2$num_trips)^2
+
+r_squared_validation_2
+
+rmse_validation_2 <- rmse(model_2, validation_set_2)
+
+rmse_validation_2
+```
+```{r automated}
+
+set.seed(42)
+
+
+
+training_set <- sample_n(trips_per_day, nrow(trips_per_day)*0.8, replace = FALSE)
+
+validation_set <- anti_join(trips_per_day, training_set)
+
+
+
+
+r_squared_training <- c(1:9)
+
+rmse_training <- c(1:9)
+
+r_squared_validation <- c(1:9)
+
+rmse_validation <- c(1:9)
+
+
+
+
+
+for (i in 1:9) {
+
+  
+
+
+  model <- lm(formula = num_trips ~ poly(tmin, i), data = training_set)
+
+  
+
+
+  training_set$predicted <- predict(model, training_set)
+
+  validation_set$predicted <- predict(model, validation_set)
+
+  
+
+  r_squared_training[i] <- cor(training_set$predicted, training_set$num_trips)^2
+
+  rmse_training[i] <- sqrt(mean((training_set$predicted - training_set$num_trips)^2))
+
+
+
+  
+
+  r_squared_validation[i] <- cor(validation_set$predicted, validation_set$num_trips)^2
+
+  rmse_validation[i] <- sqrt(mean((validation_set$predicted - validation_set$num_trips)^2))
+
+
+
+
+
+}
+
+r_squared_validation
+rmse_validation
+
+
+```
+```{r best_perf}
+
+set.seed(42)
+
+
+
+train <- sample_n(trips_per_day, nrow(trips_per_day)*0.8, replace = FALSE)
+
+validation <- anti_join(trips_per_day, train)
+
+
+
+
+model <- lm(formula = num_trips ~ poly(tmin, 8), data = train)
+
+
+
+validation$predicted <- predict(model, validation)
+
+```
+
+```{r best_perf plot}
+
+
+
+  ggplot() +
+
+  geom_point(data = validation, aes(x = tmin, y = num_trips), color = "darkgreen") +
+  
+  geom_point(data = train, aes(x = tmin, y = num_trips), color = "pink") +
+
+  geom_line(data = validation, aes(x = tmin, y = predicted), color = "blue")
+```
+```{r k-fold}
+
+set.seed(42)
+
+num_folds <- 5
+
+
+trips_per_day <- sample_frac(trips_per_day, 1, replace = F) %>%
+
+  mutate(fold = (row_number()%% num_folds) + 1)
+
+N <- 1:8
+
+avg_validation_rmse <- c()
+validation_se <- c()
+
+for (n in N) {
+
+  
+  validation_rmse <- c()
+  
+  for (f in 1:num_folds) {
+    
+    training <- filter(trips_per_day, fold != f)
+    model <- lm(num_trips ~ poly(tmin, n, raw = T), data = training)
+
+    validation <- filter(trips_per_day, fold == f)
+    
+    validation_rmse[f] <- sqrt(mean((predict(model, validation) - validation$num_trips)^2))
+  }
+
+  avg_validation_rmse[n] <- mean(validation_rmse)
+  validation_se[n] <- sd(validation_rmse) / sqrt(num_folds)
+}
+
+avg_validation_rmse
+```
+
