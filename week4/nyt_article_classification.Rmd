@@ -26,7 +26,12 @@ knitr::opts_chunk$set(echo = TRUE)
 Read business and world articles into a single data frame.
 
 ```{r read-articles}
+world <- read_tsv("world.tsv")
+business <- read_tsv("business.tsv")
 
+wb <- rbind(world, business)
+
+wb$section <- as.factor(wb$section)
 ```
 
 Create a Corpus from the article snippets using the `VectorSource()` and `Corpus()` functions from the `tm` package. Then create a DocumentTermMatrix from the snippet Corpus, removing punctuation and numbers and convert the DocumentTermMatrix to a sparseMatrix, required by cv.glmnet using the provided funciton. See the `DocumentTermMatrix()` documentation for more details, which has parameters for all of the punctuation and number parsing.
@@ -38,6 +43,12 @@ dtm_to_sparse <- function(dtm) {
  sparseMatrix(i=dtm$i, j=dtm$j, x=dtm$v, dims=c(dtm$nrow, dtm$ncol), dimnames=dtm$dimnames)
 }
 
+
+c_wb <- Corpus(VectorSource(wb$snippet))
+
+c_wb_dtm <- DocumentTermMatrix(c_wb, control = list(removePunctuation = TRUE, removeNumbers = TRUE))
+
+corpus <- dtm_to_sparse(c_wb_dtm)
 ```
 
 
@@ -47,18 +58,61 @@ Create a train / test split
 
 ```{r create-train-test}
 
+set.seed(42)
+
+ndx <- sample(nrow(corpus), floor(nrow(corpus) * 0.9))
+train <- corpus[ndx,]
+test <- corpus[-ndx,]
+
+wb_lbls <- wb$section
+
+
+train2 <- wb_lbls[ndx]
+test2 <- wb_lbls[-ndx]
+
+
+xTrain <- train
+yTrain <- train2
+xTest <- test
+yTest <- test2
 ```
 
 Cross-validate on the training set using logistic regression with cv.glmnet, measuring auc. See documentation on `cv.glmnet()`, specifically the `family` and `type.measure` parameters.
 
 ```{r cross-validate}
 
+model <- cv.glmnet(xTrain, yTrain, family="binomial", type.measure = "auc")
 ```
 
 Evaluate performance for the best-fit (`lambda.min`) model by plotting the ROC curve and printing the accuracy and AUC.
 
 ```{r evaluate-best-model}
 
+
+
+df <- data.frame(actual = yTest,
+                 log_odds = predict(model, xTest, type = "response"),log_odds = predict(model, xTest, type = "class"))
+
+colnames(df) <- c("actual", "probs", "pred")
+
+
+recall <- df %>%
+  filter(actual == 'World') %>%
+  summarize(recall = mean(pred == 'World'))
+
+# false positive rate: fraction of false examples that we predicted to be positive
+fpr <- df %>%
+  filter(actual == 'Business') %>%
+  summarize(fpr = mean(pred == 'World'))
+
+probs <- data.frame(predict(model, xTest, type="response"))
+
+pred <- prediction(probs[, "X1"], yTest)
+
+# plot ROC curve
+perf_nb <- performance(pred, measure='tpr', x.measure='fpr')
+plot(perf_nb)
+performance(pred, 'auc')
 ```
 
 # Part C
@@ -67,13 +121,15 @@ Count how many words have non-zero coefficients. Use the `coef()` and `tidy()` f
 
 ```{r count-nonzero-weights}
 
+count(tidy(coef(model, s = "lambda.min")))
+
 ```
 
 Print the words with the top 10 heighest weights for the Business section. Do the same for the World section. Use the `coef()` and `tidy()` functions for `lambda.min`.
 
 
 ```{r show-top-words}
-
+tidy(coef(model, s = "lambda.min")) %>% arrange(desc(value)) %>% tail(10)
 ```
 
 Think about how this model would perform if you used it to classify data from today's newspaper compared to the data in the test set.
