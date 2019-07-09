@@ -129,7 +129,9 @@ Print the words with the top 10 heighest weights for the Business section. Do th
 
 
 ```{r show-top-words}
-tidy(coef(model, s = "lambda.min")) %>% arrange(desc(value)) %>% tail(10)
+top_10_world <- tidy(coef(model, s = "lambda.min")) %>% arrange(desc(value)) %>% head(10)
+
+top_10_business <- tidy(coef(model, s = "lambda.min")) %>% arrange(desc(value)) %>% tail(10)
 ```
 
 Think about how this model would perform if you used it to classify data from today's newspaper compared to the data in the test set.
